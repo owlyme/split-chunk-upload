@@ -1,0 +1,180 @@
+<html lang="en"><head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>prd</title>
+	<script>
+		let UPLOADED_FILES = []
+		let total = 0
+		function uploadLargeFile() {
+			let largeFile  = document.getElementById('file').files[0]
+			if (!largeFile) {
+				alert("请选择文件")
+				return
+			}
+			UPLOADED_FILES = [];
+			let fileName = largeFile.name
+			let chunks  = splitToChunks(largeFile)
+			let chunkLength = chunks.length
+			let current = 0	
+			let setProgressWidth = setDomAttr()
+
+			total = chunks.length
+
+			chunks.forEach((chunk, chunkIndex)=> {
+				upload(chunk, chunkIndex, fileName, (res) => {
+					setProgressWidth( ++current, chunkLength)
+					UPLOADED_FILES.push(res)
+
+					if (current === total) {
+						merge()
+						showRelease()
+					}
+				})
+			})
+		}
+
+		function upload(blob, chunkIndex, fileName, callback) {
+			const httpxml = new XMLHttpRequest();
+			const formData = new FormData();
+			formData.append('fileIndex', chunkIndex)
+			formData.append('file', blob, fileName)
+			httpxml.onreadystatechange =function () {
+				if(httpxml.readyState==4 && httpxml.status==200){
+					let res = httpxml.response
+					console.log(JSON.parse(res))
+					callback && callback(JSON.parse(res))
+				} else {
+					// console.log("发生了错误");
+				}
+			}
+			httpxml.open("post","/parse",true);
+			httpxml.setRequestHeader("enctype","multipart/form-data");
+			httpxml.send(formData);
+		}
+
+		// 1024 * 1024 *5
+		function splitToChunks(file, piece = 1024 *1024 *5) {
+			let totalSize = file.size; // 文件总大小
+			let start = 0; // 每次上传的开始字节
+			let end = start + piece; // 每次上传的结尾字节
+			let chunks = []
+			while (start < totalSize) {
+				// 根据长度截取每次需要上传的数据
+				// File对象继承自Blob对象，因此包含slice方法
+				let blob = file.slice(start, end); 
+				chunks.push(blob)
+
+				start = end;
+				end = start + piece;
+			}
+			console.log(chunks)
+			return chunks
+		}
+
+		function blobToString(blob, callback) {
+			const reader = new FileReader();
+			reader.readAsArrayBuffer(blob);
+			reader.onload = (el) => {
+				/* --- 将 Unicode 编码转为一个字符 area --- */
+				var binary = ''
+				var bytes = new Uint8Array(el.target.result)
+				var length = bytes.byteLength
+				for(var i = 0; i< length; i ++){
+					binary += String.fromCharCode(bytes[i])
+				}
+				/* --- 将 Unicode 编码转为一个字符 area --- */
+				console.log('binary', binary)
+				callback && callback(binary)
+			}
+		}
+
+		function merge(callback) {
+			const newFileName = UPLOADED_FILES[0].fileFinalName;
+			const httpxml = new XMLHttpRequest();
+
+			httpxml.onreadystatechange =function () {
+				if(httpxml.readyState==4 && httpxml.status==200) {
+					let res = httpxml.response
+					callback && callback(res)
+				} else {
+					// console.log("发生了错误");
+				}
+			}
+			httpxml.open("post","/merge", true);
+			httpxml.setRequestHeader("enctype","text/json");
+			httpxml.send(JSON.stringify({
+				fileList: UPLOADED_FILES.sort((a, b) => a.chunkOrder - b.chunkOrder).map(i => i.path),
+				newFileName
+			}));
+		}
+
+		function unzip() {
+			const newFileName = UPLOADED_FILES[0].fileFinalName;
+			const httpxml = new XMLHttpRequest();
+			httpxml.onreadystatechange =function () {
+				if(httpxml.readyState==4 && httpxml.status==200) {
+					let res = httpxml.response
+					callback && callback(res)
+				} else {
+					// console.log("发生了错误");
+				}
+			}
+			httpxml.open("post","/unzip", true);
+			httpxml.send(JSON.stringify({
+				newFileName
+			}));
+		}
+
+		function release() {
+			if (UPLOADED_FILES.length < total){
+				alert("上传未结束")
+				return 
+			} else if (UPLOADED_FILES.length === 0) {
+				alert("上传未开始")
+				return 
+			}
+			merge()
+			showRelease()
+		}
+
+		function setDomAttr() {
+			let precent = document.getElementById('precent');
+			let startTime = Date.now()
+			return function setProgressWidth(num, totalNum) {
+				let currentTime = Date.now()
+				if (!precent) {
+					precent = document.getElementById('precent');
+				}
+				let width = `${(num / totalNum * 100).toFixed(2)}%`
+				precent.style.width = width
+				precent.innerHTML= width + ` <br /> ${(currentTime - startTime) / 1000}s`
+			}
+		}
+		
+		function showRelease() {
+			let button = document.getElementById('button');
+
+			button.style.display = 'block'
+		}
+
+
+	</script>
+</head>
+<body>
+	<div>
+		<input type="file" name="file" id="file" >
+		<button type="button" onclick="uploadLargeFile()">上传</button>
+	</div>
+	<div>
+		<button type="button" id="button" onclick="release()" style="display: none">合并分包</button>
+	</div>
+	<div>
+		<button type="button" id="unzip" onclick="unzip()" >解压文件</button>
+	</div>
+	
+	<div id="progress" style="height: 60px;background: #eaeaea;">
+		<div id="precent" style="text-align: right; background: rgb(110, 195, 110); height: 100%; width: 0"></div>
+	</div>
+	
+
+ </body></html>
